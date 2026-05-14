@@ -221,13 +221,38 @@ def scrape():
             with sync_playwright() as p:
                 browser = p.chromium.launch(
                     headless=True,
-                    args=["--no-sandbox", "--disable-setuid-sandbox",
-                          "--disable-dev-shm-usage", "--disable-gpu"]
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-web-security",
+                        "--disable-features=IsolateOrigins,site-per-process",
+                        "--flag-switches-begin",
+                        "--disable-site-isolation-trials",
+                        "--flag-switches-end"
+                    ]
                 )
                 context = browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-                    viewport={"width": 1280, "height": 800}
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    viewport={"width": 1366, "height": 768},
+                    locale="en-IN",
+                    timezone_id="Asia/Kolkata",
+                    extra_http_headers={
+                        "Accept-Language": "en-IN,en;q=0.9",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    }
                 )
+
+                # Stealth: hide webdriver flag
+                context.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
+                    Object.defineProperty(navigator, 'languages', { get: () => ['en-IN', 'en'] });
+                    window.chrome = { runtime: {} };
+                """)
+
                 page = context.new_page()
 
                 for i, pid in enumerate(ids):
