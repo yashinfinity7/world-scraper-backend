@@ -17,31 +17,106 @@ def scrape_amazon(page, asin):
         title = page.query_selector("#productTitle")
         title = title.inner_text().strip() if title else "N/A"
 
-        mrp = page.query_selector(".a-price.a-text-price .a-offscreen")
-        if not mrp:
-            mrp = page.query_selector("span[data-a-strike='true'] .a-offscreen")
-        mrp = mrp.inner_text().strip() if mrp else "N/A"
+        # Wait for price to load
+        time.sleep(2)
 
-        price = page.query_selector(".a-price-whole")
-        price = "₹" + price.inner_text().strip().replace(",","").replace(".","") if price else "N/A"
+        # MRP - get all offscreen prices, last one is usually MRP
+        mrp = "N/A"
+        try:
+            mrp_el = page.query_selector("span.a-price.a-text-price span.a-offscreen")
+            if mrp_el:
+                mrp = mrp_el.inner_text().strip()
+            if mrp == "N/A":
+                # Try basisPrice
+                mrp_el = page.query_selector(".basisPrice span.a-offscreen")
+                if mrp_el:
+                    mrp = mrp_el.inner_text().strip()
+            if mrp == "N/A":
+                # Get all offscreen and find strikethrough context
+                mrp_els = page.query_selector_all("span.a-offscreen")
+                for el in mrp_els:
+                    parent = page.evaluate("el => el.closest('.a-text-price') ? el.closest('.a-text-price').getAttribute('data-a-strike') : null", el)
+                    if parent == "true":
+                        mrp = el.inner_text().strip()
+                        break
+        except:
+            pass
 
-        sold_by = page.query_selector("#sellerProfileTriggerId")
-        if not sold_by:
-            sold_by = page.query_selector("#merchant-info a")
-        sold_by = sold_by.inner_text().strip() if sold_by else "N/A"
+        # Selling Price
+        price = "N/A"
+        try:
+            price_el = page.query_selector("#corePriceDisplay_desktop_feature_div .a-price-whole")
+            if not price_el:
+                price_el = page.query_selector(".a-price.priceToPay .a-price-whole")
+            if not price_el:
+                price_el = page.query_selector(".a-price-whole")
+            if price_el:
+                whole = price_el.inner_text().strip().replace(",","").replace(".","")
+                price = f"₹{whole}"
+        except:
+            pass
 
-        deal = page.query_selector("#dealBadgeSupportingText")
-        deal = deal.inner_text().strip() if deal else "N/A"
+        # Sold By
+        sold_by = "N/A"
+        try:
+            sold_selectors = [
+                "#sellerProfileTriggerId",
+                "#tabular-buybox-truncate-0 .a-link-normal",
+                "#merchantInfoFeature_feature_div .a-link-normal",
+                "#merchant-info a",
+            ]
+            for sel in sold_selectors:
+                el = page.query_selector(sel)
+                if el:
+                    txt = el.inner_text().strip()
+                    if txt:
+                        sold_by = txt
+                        break
+        except:
+            pass
 
-        rating = page.query_selector("#acrPopover .a-size-base.a-color-base")
-        if not rating:
-            el = page.query_selector("span.a-icon-alt")
-            rating = el.inner_text().strip().split(" ")[0] if el else "N/A"
-        else:
-            rating = rating.inner_text().strip()
+        # Deal Tag
+        deal = "N/A"
+        try:
+            deal_selectors = [
+                "#dealBadgeSupportingText",
+                "#apex_offerDisplay_desktop .a-badge-text",
+                ".dealBadge span",
+                "#dealsAccordion .a-badge-text",
+            ]
+            for sel in deal_selectors:
+                el = page.query_selector(sel)
+                if el:
+                    txt = el.inner_text().strip()
+                    if txt:
+                        deal = txt
+                        break
+        except:
+            pass
 
-        rating_count = page.query_selector("#acrCustomerReviewText")
-        rating_count = rating_count.inner_text().strip() if rating_count else "N/A"
+        # Rating
+        rating = "N/A"
+        try:
+            rating_el = page.query_selector("#acrPopover")
+            if rating_el:
+                title_attr = rating_el.get_attribute("title")
+                if title_attr:
+                    rating = title_attr.split(" ")[0]
+            if rating == "N/A":
+                rating_el = page.query_selector("span.a-icon-alt")
+                if rating_el:
+                    rating = rating_el.inner_text().strip().split(" ")[0]
+        except:
+            pass
+
+        # Rating Count
+        rating_count = "N/A"
+        try:
+            count_el = page.query_selector("#acrCustomerReviewText")
+            if count_el:
+                rating_count = count_el.inner_text().strip()
+        except:
+            pass
 
         return {
             "asin": asin, "title": title, "mrp": mrp,
