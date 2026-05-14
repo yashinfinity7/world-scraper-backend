@@ -12,100 +12,102 @@ def scrape_amazon(page, asin):
     try:
         url = f"https://www.amazon.in/dp/{asin}?th=1"
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        time.sleep(3)
+        
+        # Wait for page to fully render
+        time.sleep(4)
+        
+        # Scroll to trigger lazy loading
+        page.mouse.wheel(0, 300)
+        time.sleep(1)
+        page.mouse.wheel(0, -300)
+        time.sleep(1)
+
+        # Check if CAPTCHA
+        page_content = page.content()
+        if "captcha" in page_content.lower() or "robot" in page_content.lower():
+            return {"asin": asin, "status": "error", "error": "CAPTCHA detected"}
 
         title = page.query_selector("#productTitle")
         title = title.inner_text().strip() if title else "N/A"
 
-        # Wait for price to load
-        time.sleep(2)
-
-        # MRP - get all offscreen prices, last one is usually MRP
+        # MRP - multiple strategies
         mrp = "N/A"
-        try:
-            mrp_el = page.query_selector("span.a-price.a-text-price span.a-offscreen")
+        # Strategy 1: basis price (most reliable)
+        mrp_el = page.query_selector(".basisPrice .a-offscreen")
+        if mrp_el:
+            mrp = mrp_el.inner_text().strip()
+        # Strategy 2: a-text-price with strike
+        if mrp == "N/A":
+            mrp_el = page.query_selector(".a-price.a-text-price .a-offscreen")
             if mrp_el:
                 mrp = mrp_el.inner_text().strip()
-            if mrp == "N/A":
-                # Try basisPrice
-                mrp_el = page.query_selector(".basisPrice span.a-offscreen")
-                if mrp_el:
-                    mrp = mrp_el.inner_text().strip()
-            if mrp == "N/A":
-                # Get all offscreen and find strikethrough context
-                mrp_els = page.query_selector_all("span.a-offscreen")
-                for el in mrp_els:
-                    parent = page.evaluate("el => el.closest('.a-text-price') ? el.closest('.a-text-price').getAttribute('data-a-strike') : null", el)
-                    if parent == "true":
-                        mrp = el.inner_text().strip()
-                        break
-        except:
-            pass
+        # Strategy 3: JavaScript evaluation
+        if mrp == "N/A":
+            try:
+                mrp = page.evaluate("""() => {
+                    const els = document.querySelectorAll('.a-price.a-text-price span.a-offscreen');
+                    for(const el of els) { if(el.textContent.trim()) return el.textContent.trim(); }
+                    const basis = document.querySelector('.basisPrice span.a-offscreen');
+                    if(basis) return basis.textContent.trim();
+                    return 'N/A';
+                }""")
+            except:
+                pass
 
         # Selling Price
         price = "N/A"
         try:
-            price_el = page.query_selector("#corePriceDisplay_desktop_feature_div .a-price-whole")
-            if not price_el:
-                price_el = page.query_selector(".a-price.priceToPay .a-price-whole")
-            if not price_el:
-                price_el = page.query_selector(".a-price-whole")
-            if price_el:
-                whole = price_el.inner_text().strip().replace(",","").replace(".","")
-                price = f"₹{whole}"
+            price = page.evaluate("""() => {
+                const whole = document.querySelector('.a-price.priceToPay .a-price-whole') ||
+                              document.querySelector('#corePriceDisplay_desktop_feature_div .a-price-whole') ||
+                              document.querySelector('.a-price-whole');
+                if(whole) {
+                    const txt = whole.textContent.replace(/[,\\.]/g,'').trim();
+                    return '₹' + txt;
+                }
+                return 'N/A';
+            }""")
         except:
             pass
 
         # Sold By
         sold_by = "N/A"
         try:
-            sold_selectors = [
-                "#sellerProfileTriggerId",
-                "#tabular-buybox-truncate-0 .a-link-normal",
-                "#merchantInfoFeature_feature_div .a-link-normal",
-                "#merchant-info a",
-            ]
-            for sel in sold_selectors:
-                el = page.query_selector(sel)
-                if el:
-                    txt = el.inner_text().strip()
-                    if txt:
-                        sold_by = txt
-                        break
+            sold_by = page.evaluate("""() => {
+                const s = document.querySelector('#sellerProfileTriggerId') ||
+                          document.querySelector('#tabular-buybox-truncate-0 .a-link-normal') ||
+                          document.querySelector('#merchantInfoFeature_feature_div .a-link-normal') ||
+                          document.querySelector('#merchant-info a');
+                return s ? s.textContent.trim() : 'N/A';
+            }""")
         except:
             pass
 
         # Deal Tag
         deal = "N/A"
         try:
-            deal_selectors = [
-                "#dealBadgeSupportingText",
-                "#apex_offerDisplay_desktop .a-badge-text",
-                ".dealBadge span",
-                "#dealsAccordion .a-badge-text",
-            ]
-            for sel in deal_selectors:
-                el = page.query_selector(sel)
-                if el:
-                    txt = el.inner_text().strip()
-                    if txt:
-                        deal = txt
-                        break
+            deal = page.evaluate("""() => {
+                const d = document.querySelector('#dealBadgeSupportingText') ||
+                          document.querySelector('.dealBadge span') ||
+                          document.querySelector('#apex_offerDisplay_desktop .a-badge-text');
+                return d ? d.textContent.trim() : 'N/A';
+            }""")
         except:
             pass
 
         # Rating
         rating = "N/A"
         try:
-            rating_el = page.query_selector("#acrPopover")
-            if rating_el:
-                title_attr = rating_el.get_attribute("title")
-                if title_attr:
-                    rating = title_attr.split(" ")[0]
-            if rating == "N/A":
-                rating_el = page.query_selector("span.a-icon-alt")
-                if rating_el:
-                    rating = rating_el.inner_text().strip().split(" ")[0]
+            rating = page.evaluate("""() => {
+                const el = document.querySelector('#acrPopover');
+                if(el) {
+                    const t = el.getAttribute('title');
+                    if(t) return t.split(' ')[0];
+                }
+                const alt = document.querySelector('span.a-icon-alt');
+                if(alt) return alt.textContent.split(' ')[0];
+                return 'N/A';
+            }""")
         except:
             pass
 
